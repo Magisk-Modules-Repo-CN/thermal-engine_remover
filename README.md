@@ -7,5 +7,7 @@
 - 重启即可生效
 
 ## Change Log
-- 2018.09.23 modify for full replace
+- 2018.09.23 
+  - v2.1: re-add mode select 
+  - v2: modify for full replace
 - 2018.09.22 init
