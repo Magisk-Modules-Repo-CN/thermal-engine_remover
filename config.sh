@@ -100,86 +100,22 @@ set_permissions() {
 # 不要直接向 update-binary 添加代码，因为这会让您很难将模块迁移到新的模板版本
 # 尽量不要对 update-binary 文件做其他修改，尽量只在其中执行函数调用
 
-make_empty_conf() {
+go_replace() {
+  ui_print "- 正在替换文件"
   mkdir -p ${MODPATH}/system/etc
   mkdir -p ${MODPATH}/system/vendor/etc
   for tconf in $(ls /system/etc/thermal-engine*.conf /system/vendor/etc/thermal-engine*.conf)
   do
     touch ${MODPATH}${tconf}
   done
-}
-
-make_empty_bin () {
-  mkdir -p ${MODPATH}/system/bin
-  mkdir -p ${MODPATH}/system/vendor/bin
+  mkdir ${MODPATH}/system/bin
+  mkdir ${MODPATH}/system/vendor/bin
+  mkdir ${MODPATH}/system/vendor/lib
+  mkdir ${MODPATH}/system/vendor/lib64
   touch $MODPATH/system/bin/thermal-engine
-  touch $MODPATH/vendor/bin/thermal-engine
-}
-
-# Keycheck binary by someone755 @Github, idea for code below by Zappo @xda-developers
-KEYCHECK=$INSTALLER/common/keycheck
-chmod 755 $KEYCHECK
-
-keytest() {
-  ui_print " - 音量键测试 -"
-  ui_print "   按下 [音量+] 键:"
-  (/system/bin/getevent -lc 1 2>&1 | /system/bin/grep VOLUME | /system/bin/grep " DOWN" > $INSTALLER/events) || return 1
-  return 0
-}
-
-chooseport() {
-  #note from chainfire @xda-developers: getevent behaves weird when piped, and busybox grep likes that even less than toolbox/toybox grep
-  while (true); do
-    /system/bin/getevent -lc 1 2>&1 | /system/bin/grep VOLUME | /system/bin/grep " DOWN" > $INSTALLER/events
-    if (`cat $INSTALLER/events 2>/dev/null | /system/bin/grep VOLUME >/dev/null`); then
-      break
-    fi
-  done
-  if (`cat $INSTALLER/events 2>/dev/null | /system/bin/grep VOLUMEUP >/dev/null`); then
-    return 0
-  else
-    return 1
-  fi
-}
-
-chooseportold() {
-  # Calling it first time detects previous input. Calling it second time will do what we want
-  $KEYCHECK
-  $KEYCHECK
-  SEL=$?
-  if [ "$1" == "UP" ]; then
-    UP=$SEL
-  elif [ "$1" == "DOWN" ]; then
-    DOWN=$SEL
-  elif [ $SEL -eq $UP ]; then
-    return 0
-  elif [ $SEL -eq $DOWN ]; then
-    return 1
-  else
-    abort "   未检测到音量键!"
-  fi
-}
-
-go_replace() {
-  if keytest; then
-    FUNCTION=chooseport
-  else
-    FUNCTION=chooseportold
-    ui_print "   ! 检测到遗留设备! 使用旧的 keycheck 方案"
-    ui_print " "
-    ui_print "- 进行音量键编程 -"
-    ui_print "   再次按下[音量+]键:"
-    $FUNCTION "UP"
-    ui_print "   按下[音量-]键"
-    $FUNCTION "DOWN"
-  fi
-  ui_print " "
-  ui_print " - 选择方法 -"
-  ui_print "   选择您想要使用的替换方法:"
-  ui_print "   [音量+] = conf(推荐), [音量-] = binary"
-  if $FUNCTION; then
-    make_empty_conf
-  else
-    make_empty_bin
-  fi
+  touch $MODPATH/system/vendor/bin/thermal-engine
+  touch $MODPATH/system/vendor/lib/libthermalioctl.so
+  touch $MODPATH/system/vendor/lib/libthermalclient.so
+  touch $MODPATH/system/vendor/lib64/libthermalioctl.so
+  touch $MODPATH/system/vendor/lib64/libthermalclient.so
 }
