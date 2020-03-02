@@ -4,9 +4,11 @@
 
 ## 用法
 - 在刷入时按音量键选择模式
-- 重启即可生效
+1. - 重启即可生效
 
 ## Change Log
+- 2020.03.02
+  -v3.0: support magisk 20.1+
 - 2018.09.23 
   - v2.1: re-add mode select 
   - v2: modify for full replace
