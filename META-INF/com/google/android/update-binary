@@ -1,157 +1,187 @@
 #!/sbin/sh
-##########################################################################################
-#
-# Magisk 模块安装脚本模板
-# by topjohnwu
-# 翻译: cjybyjk
-#
-##########################################################################################
 
-TMPDIR=/dev/tmp
-INSTALLER=$TMPDIR/install
-# 总在 tmp 下挂载
-MOUNTPATH=$TMPDIR/magisk_img
+#################
+# Initialization
+#################
 
-# 默认权限
 umask 022
 
-# 清除工作
-rm -rf $TMPDIR 2>/dev/null
-mkdir -p $INSTALLER
+# Global vars
+TMPDIR=/dev/tmp
+PERSISTDIR=/sbin/.magisk/mirror/persist
 
-# 在加载 util_functions 前 echo
+rm -rf $TMPDIR 2>/dev/null
+mkdir -p $TMPDIR
+
+# echo before loading util_functions
 ui_print() { echo "$1"; }
 
 require_new_magisk() {
   ui_print "*******************************"
-  ui_print " 请安装 Magisk v17.0+ ! "
+  ui_print " Please install Magisk v19.0+! "
   ui_print "*******************************"
   exit 1
 }
 
-##########################################################################################
-# 环境设置
-##########################################################################################
+is_legacy_script() {
+  unzip -l "$ZIPFILE" install.sh | grep -q install.sh
+  return $?
+}
+
+print_modname() {
+  local len
+  len=`echo -n $MODNAME | wc -c`
+  len=$((len + 2))
+  local pounds=`printf "%${len}s" | tr ' ' '*'`
+  ui_print "    *******************************************"
+  for i in name version author; do
+    NEW=$(grep_prop $i $TMPDIR/module.prop)
+    [ "$i" == "author" ] && NEW="by ${NEW}"
+    CHARS=$((${#NEW}-$(echo "$NEW" | tr -cd "©®™" | wc -m)))
+    SPACES=""
+    if [ $CHARS -le 41 ]; then
+      for j in $(seq $(((41-$CHARS) / 2))); do
+        SPACES="${SPACES} "
+      done
+    fi
+    if [ $(((41-$CHARS) % 2)) -eq 1 ]; then 
+      ui_print "    *$SPACES$NEW${SPACES} *"
+    else
+      ui_print "    *$SPACES$NEW$SPACES*"
+    fi
+    [ "$i" == "name" ] && ui_print "    *******************************************"
+  done
+  ui_print "    *******************************************"
+  ui_print " "
+}
+
+##############
+# Environment
+##############
 
 OUTFD=$2
-ZIP=$3
+ZIPFILE=$3
 
 mount /data 2>/dev/null
 
-# 加载公用函数
-if [ -f /data/adb/magisk/util_functions.sh ]; then
-  . /data/adb/magisk/util_functions.sh
-elif [ -f /data/magisk/util_functions.sh ]; then
-  NVBASE=/data
-  . /data/magisk/util_functions.sh
-else
-  require_new_magisk
-fi
+# Load utility functions
+[ -f /data/adb/magisk/util_functions.sh ] || require_new_magisk
+. /data/adb/magisk/util_functions.sh
+[ $MAGISK_VER_CODE -gt 18100 ] || require_new_magisk
 
-# 如果处于 BOOTMODE(系统模式)，则使用替代镜像
-$BOOTMODE && IMG=$NVBASE/magisk_merge.img
-
-# 准备卡刷 zip 包
+# Preperation for flashable zips
 setup_flashable
 
-# 挂载分区
+# Mount partitions
 mount_partitions
 
-# 检测版本和架构
+# Detect version and architecture
 api_level_arch_detect
 
-# 你可以从 $API 取得 Android API 版本, 从 $ARCH 取得 CPU 架构
-# 如果您正在创建依赖特定 Android版本/平台 的模块，这是非常有用的
-
-# 安装 busybox 和二进制文件
+# Setup busybox and binaries
 $BOOTMODE && boot_actions || recovery_actions
 
-##########################################################################################
-# 准备
-##########################################################################################
+##############
+# Preparation
+##############
 
-# 提取公共文件
-unzip -o "$ZIP" module.prop config.sh 'common/*' -d $INSTALLER >&2
+# Extract prop file
+unzip -o "$ZIPFILE" module.prop -d $TMPDIR >&2
+[ ! -f $TMPDIR/module.prop ] && abort "! Unable to extract zip file!"
 
-[ ! -f $INSTALLER/config.sh ] && abort "! 从 zip 中提取文件失败!"
-# 加载设置
-. $INSTALLER/config.sh
+$BOOTMODE && MODDIRNAME=modules_update || MODDIRNAME=modules
+MODULEROOT=$NVBASE/$MODDIRNAME
+MODID=`grep_prop id $TMPDIR/module.prop`
+MODPATH=$MODULEROOT/$MODID
+MODNAME=`grep_prop name $TMPDIR/module.prop`
 
-# 检查已安装的 Magisk 版本
-MIN_VER=`grep_prop minMagisk $INSTALLER/module.prop`
-[ ! -z $MAGISK_VER_CODE -a $MAGISK_VER_CODE -ge $MIN_VER ] || require_new_magisk
-MODID=`grep_prop id $INSTALLER/module.prop`
-MODPATH=$MOUNTPATH/$MODID
-
-# 打印模块名称
-print_modname
-
-# 请将这个信息保留在您的 zip 卡刷包中 :)
-ui_print "******************************"
-ui_print "Powered by Magisk (@topjohnwu)"
-ui_print "******************************"
-
-##########################################################################################
-# 安装
-##########################################################################################
-
-# 获取变量 reqSizeM。如果需要，可以使用自己的方法来确定 reqSizeM
-# reqSizeM 为安装这个模块需要的空间大小, 单位MB
-request_zip_size_check "$ZIP"
-
-# 这个函数将挂载 $IMG 到 $MOUNTPATH，并根据 $reqSizeM 调整镜像大小
-mount_magisk_img
-
-# 创建模块路径
+# Create mod paths
 rm -rf $MODPATH 2>/dev/null
 mkdir -p $MODPATH
 
-# 将文件解压缩到 system 。如果需要，可以使用自己的方法
-ui_print "- 正在解压模块文件"
-unzip -o "$ZIP" 'system/*' -d $MODPATH >&2
+##########
+# Install
+##########
 
-go_replace
+if is_legacy_script; then
+  unzip -oj "$ZIPFILE" module.prop install.sh uninstall.sh 'common/*' -d $TMPDIR >&2
 
-# 删除 placeholder
-rm -f $MODPATH/system/placeholder 2>/dev/null
+  # Load install script
+  . $TMPDIR/install.sh
 
-# 处理 replace 文件夹
+  # Callbacks
+  print_modname
+  on_install
+
+  # Custom uninstaller
+  [ -f $TMPDIR/uninstall.sh ] && cp -af $TMPDIR/uninstall.sh $MODPATH/uninstall.sh
+
+  # Skip mount
+  $SKIPMOUNT && touch $MODPATH/skip_mount
+
+  # prop file
+  $PROPFILE && cp -af $TMPDIR/system.prop $MODPATH/system.prop
+
+  # Module info
+  cp -af $TMPDIR/module.prop $MODPATH/module.prop
+
+  # post-fs-data scripts
+  $POSTFSDATA && cp -af $TMPDIR/post-fs-data.sh $MODPATH/post-fs-data.sh
+
+  # service scripts
+  $LATESTARTSERVICE && cp -af $TMPDIR/service.sh $MODPATH/service.sh
+
+  ui_print "- Setting permissions"
+  set_permissions
+else
+  print_modname
+
+  unzip -o "$ZIPFILE" customize.sh -d $MODPATH >&2
+
+  if ! grep -q '^SKIPUNZIP=1$' $MODPATH/customize.sh 2>/dev/null; then
+    ui_print "- Extracting module files"
+    unzip -o "$ZIPFILE" -x 'META-INF/*' -d $MODPATH >&2
+
+    # Default permissions
+    set_perm_recursive $MODPATH 0 0 0755 0644
+  fi
+
+  # Load customization script
+  [ -f $MODPATH/customize.sh ] && . $MODPATH/customize.sh
+fi
+
+# Handle replace folders
 for TARGET in $REPLACE; do
+  ui_print "- Replace target: $TARGET"
   mktouch $MODPATH$TARGET/.replace
 done
 
-# 自动挂载
-$AUTOMOUNT && touch $MODPATH/auto_mount
-
-# prop 文件
-$PROPFILE && cp -af $INSTALLER/common/system.prop $MODPATH/system.prop
-
-# 模块信息
-cp -af $INSTALLER/module.prop $MODPATH/module.prop
 if $BOOTMODE; then
-  # 为 Magisk Manager 更新信息
-  mktouch /sbin/.core/img/$MODID/update
-  cp -af $INSTALLER/module.prop /sbin/.core/img/$MODID/module.prop
+  # Update info for Magisk Manager
+  mktouch $NVBASE/modules/$MODID/update
+  cp -af $MODPATH/module.prop $NVBASE/modules/$MODID/module.prop
 fi
 
-# post-fs-data 模式脚本
-$POSTFSDATA && cp -af $INSTALLER/common/post-fs-data.sh $MODPATH/post-fs-data.sh
+# Copy over custom sepolicy rules
+if [ -f $MODPATH/sepolicy.rule -a -e $PERSISTDIR ]; then
+  ui_print "- Installing custom sepolicy patch"
+  PERSISTMOD=$PERSISTDIR/magisk/$MODID
+  mkdir -p $PERSISTMOD
+  cp -af $MODPATH/sepolicy.rule $PERSISTMOD/sepolicy.rule
+fi
 
-# service 模式脚本
-$LATESTARTSERVICE && cp -af $INSTALLER/common/service.sh $MODPATH/service.sh
+# Remove stuffs that don't belong to modules
+rm -rf \
+$MODPATH/system/placeholder $MODPATH/customize.sh \
+$MODPATH/README.md $MODPATH/LICENSE $MODPATH/.git* 2>/dev/null
 
-ui_print "- 正在设置权限"
-set_permissions
+##############
+# Finalizing
+##############
 
-##########################################################################################
-# 结束
-##########################################################################################
-
-# 卸载 magisk 镜像, 并尽可能地缩小它
-unmount_magisk_img
-
+cd /
 $BOOTMODE || recovery_cleanup
 rm -rf $TMPDIR
 
-ui_print "- 完成"
+ui_print "- Done"
 exit 0
