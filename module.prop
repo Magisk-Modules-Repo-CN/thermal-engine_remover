@@ -1,7 +1,6 @@
 id=thermalRemover
 name=thermal-engine Remover
-version=v2.1
-versionCode=3
-author=cjybyjk @ coolapk
+version=v3.0
+versionCode=30
+author=cjybyjk & 依然的爱 @ coolapk
 description=这个模块可以不直接修改系统地移除温控文件
-minMagisk=1500
