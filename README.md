@@ -8,7 +8,7 @@
 
 ## Change Log
 - 2020.03.02
-  -v3.0: support magisk 20.1+
+  - v3.0: support magisk 20.1+
 - 2018.09.23 
   - v2.1: re-add mode select 
   - v2: modify for full replace
